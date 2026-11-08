@@ -132,6 +132,9 @@ export default function LiveBooking({ session, gpsPos, onFinish, toast }) {
             <span className="call-banner-ico"><Icon name="phone" size={20} /></span>
             <p><b>{firstName(d.name)}</b> will call you on <b>{b.client.phone}</b> to agree on the price. You can also call them now.</p>
           </div>
+          <div className="waiting-line light">
+            <Spinner /> Waiting for {firstName(d.name)} to confirm the price. Your location is shared only after that.
+          </div>
           <div className="action-row two">
             <a className="action" href={telLink(d.phone)}><span className="action-ico"><Icon name="phone" size={20} /></span>Call {firstName(d.name)}</a>
             <button className="action" onClick={openChat}>
@@ -140,28 +143,18 @@ export default function LiveBooking({ session, gpsPos, onFinish, toast }) {
           </div>
         </div>
         <div className="screen-footer stack">
-          <button className="btn btn-primary" disabled={busy} onClick={() => setAsk('agree')}>
-            <Icon name="check" size={18} stroke={3} /> We agreed on the price
+          <button className="btn btn-ghost danger-outline" disabled={busy} onClick={() => setAsk('disagree')}>
+            <Icon name="close" size={18} /> Cancel, we didn't agree
           </button>
-          <button className="btn btn-ghost" disabled={busy} onClick={() => setAsk('disagree')}>We couldn't agree. Find another {word}</button>
-          <button className="link-btn" onClick={() => setAsk('cancel')}>Cancel request</button>
+          <button className="link-btn" onClick={() => setAsk('cancel')}>Stop looking for a {word}</button>
         </div>
-        {ask === 'agree' && (
-          <Modal title="Share your location?" onClose={() => setAsk(null)}
-            actions={<>
-              <button className="btn btn-ghost" onClick={() => setAsk(null)}>Not yet</button>
-              <button className="btn btn-primary" onClick={() => act(() => bApi.agree(), `${firstName(d.name)} can now see where you are`)}>Yes, share</button>
-            </>}>
-            {firstName(d.name)} will see your live location and come to pick you up. Only confirm after you've agreed on the price.
-          </Modal>
-        )}
         {ask === 'disagree' && (
-          <Modal title={`Find another ${word}?`} onClose={() => setAsk(null)}
+          <Modal title={`Cancel with ${firstName(d.name)}?`} onClose={() => setAsk(null)}
             actions={<>
               <button className="btn btn-ghost" onClick={() => setAsk(null)}>Go back</button>
-              <button className="btn btn-primary" onClick={() => act(() => bApi.notAgreed())}>Find another</button>
+              <button className="btn btn-primary" onClick={() => act(() => bApi.notAgreed(), `Finding the next nearest ${word}...`)}>Yes, find next</button>
             </>}>
-            We'll release {firstName(d.name)} and alert the next nearest {word}.
+            We'll release {firstName(d.name)} and alert the next nearest {word}. They will call you to agree on a price.
           </Modal>
         )}
         {cancelModal}

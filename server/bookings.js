@@ -96,17 +96,11 @@ function releaseDriver(b, reason) {
 
 /* ---------------- Client actions ---------------- */
 
-export function clientAgree(b) {
-  if (b.status !== 'accepted') fail('There is no driver waiting for your confirmation');
-  b.status = 'to_pickup';
-  b.agreedAt = Date.now();
-  system(b, 'Price agreed. Your location is now shared with your driver.');
-}
-
+// The client cancels with this driver (e.g. no price agreement); the next nearest driver is alerted.
 export function clientNotAgreed(b) {
-  if (b.status !== 'accepted') fail('Nothing to change');
+  if (b.status !== 'accepted') fail('You can only do this before the price is agreed');
   const d = getDriver(b.driverId);
-  releaseDriver(b, `You and ${d ? first(d.name) : 'the driver'} didn't agree. Finding another ${word(b)}...`);
+  releaseDriver(b, `Cancelled with ${d ? first(d.name) : 'the driver'}. Finding the next nearest ${word(b)}...`);
 }
 
 export function clientRetry(b) {
@@ -164,23 +158,60 @@ export function driverRespond(d, bookingId, accept) {
 export const driverJob = (d) => (d.jobId ? bookings.get(d.jobId) || null : null);
 export const driverOffer = (d) => (d.offerBookingId ? bookings.get(d.offerBookingId) || null : null);
 
-const NEXT = { arrived: ['to_pickup', 'arrived'], start: ['arrived', 'in_trip'], complete: ['in_trip', 'done'] };
+const NEXT = {
+  agree: ['accepted', 'to_pickup'],
+  arrived: ['to_pickup', 'arrived'],
+  start: ['arrived', 'in_trip'],
+  complete: ['in_trip', 'done'],
+};
 
 export function driverAdvance(d, action) {
   const b = driverJob(d);
   if (!b) fail('You have no active trip');
   if (action === 'release') {
-    releaseDriver(b, `${first(d.name)} can't take this trip. Finding another ${word(b)}...`);
+    releaseDriver(b, b.status === 'accepted'
+      ? `${first(d.name)} couldn't reach you. Finding the next nearest ${word(b)}...`
+      : `${first(d.name)} can't complete this trip. Finding another ${word(b)}...`);
     return;
   }
   const step = NEXT[action];
   if (!step) fail('Unknown action');
   if (b.status !== step[0]) fail('That step is not available right now');
   b.status = step[1];
+  if (action === 'agree') {
+    b.agreedAt = Date.now();
+    system(b, `${first(d.name)} confirmed the price. Your location is now shared and they're on the way.`);
+  }
   if (b.status === 'done') {
     d.jobId = null;
     b.doneAt = Date.now();
+    d.trips.push(b.id);
   }
+}
+
+// Uganda is UTC+3: "today" starts at local midnight.
+const startOfTodayUG = () => {
+  const offset = 3 * 3600_000;
+  return Math.floor((Date.now() + offset) / 86_400_000) * 86_400_000 - offset;
+};
+
+export function driverStats(d) {
+  const done = d.trips.map((id) => bookings.get(id)).filter(Boolean);
+  const today = startOfTodayUG();
+  return {
+    tripsToday: done.filter((b) => b.doneAt >= today).length,
+    tripsTotal: d.trips.length,
+    recent: done.slice(-20).reverse().map((b) => ({
+      id: b.id,
+      service: b.service.id,
+      from: b.pickup.gps ? 'Client location' : b.pickup.name,
+      to: b.dropoff.name,
+      client: first(b.client.name),
+      km: round1(haversineKm(b.pickup, b.dropoff) * ROAD_FACTOR),
+      doneAt: b.doneAt,
+      rating: b.rating,
+    })),
+  };
 }
 
 /* ---------------- Views ---------------- */

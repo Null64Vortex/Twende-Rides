@@ -57,6 +57,8 @@ export function registerDriver({ id, token, profile }) {
       offerBookingId: null,
       jobId: null,
       ratings: [],
+      trips: [],
+      onlineSince: null,
     };
     drivers.set(d.id, d);
   }
@@ -128,5 +130,17 @@ export function publicDriver(d) {
 }
 
 export function selfView(d) {
-  return { ...publicDriver(d), online: d.online, gpsFresh: !!d.pos && Date.now() - d.updatedAt < STALE_MS };
+  return {
+    ...publicDriver(d),
+    online: d.online,
+    onlineForMs: d.online && d.onlineSince ? Date.now() - d.onlineSince : 0,
+    accuracy: d.pos?.accuracy ?? null,
+    gpsFresh: !!d.pos && Date.now() - d.updatedAt < STALE_MS,
+  };
+}
+
+export function setOnline(d, online) {
+  if (online && !d.online) d.onlineSince = Date.now();
+  if (!online) d.onlineSince = null;
+  d.online = online;
 }

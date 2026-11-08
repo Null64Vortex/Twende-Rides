@@ -7,11 +7,11 @@ import { SERVICES, VEHICLES, TIERS, CONTENTS, SIZES, PAYMENTS } from './catalog.
 import { findPlace, searchPlaces } from './places.js';
 import { route } from './routing.js';
 import {
-  DriverInputError, authDriver, cleanPhone, nearbyCounts, registerDriver, selfView, setDriverLocation, validPhone,
+  DriverInputError, authDriver, cleanPhone, nearbyCounts, registerDriver, selfView, setDriverLocation, setOnline, validPhone,
 } from './drivers.js';
 import {
-  BookingError, addMessage, clientAgree, clientCancel, clientLocation, clientNotAgreed, clientRate, clientRetry,
-  clientView, createBooking, driverAdvance, driverJob, driverOffer, driverRespond, driverView, getClientBooking,
+  BookingError, addMessage, clientCancel, clientLocation, clientNotAgreed, clientRate, clientRetry,
+  clientView, createBooking, driverAdvance, driverJob, driverOffer, driverRespond, driverStats, driverView, getClientBooking,
 } from './bookings.js';
 
 const PORT = process.env.PORT || 4000;
@@ -118,7 +118,7 @@ function driverAuth(req) {
 function driverState(d) {
   const offer = driverOffer(d);
   const job = driverJob(d);
-  return { driver: selfView(d), offer: offer ? driverView(offer, d) : null, job: job ? driverView(job, d) : null };
+  return { driver: selfView(d), stats: driverStats(d), offer: offer ? driverView(offer, d) : null, job: job ? driverView(job, d) : null };
 }
 
 function parseLatLng(s) {
@@ -146,7 +146,6 @@ const clientAction = (name, fn) => app.post(`/api/bookings/:id/${name}`, wrap((r
   fn(b, req.body || {});
   return clientView(b);
 }));
-clientAction('agree', (b) => clientAgree(b));
 clientAction('not-agreed', (b) => clientNotAgreed(b));
 clientAction('retry', (b) => clientRetry(b));
 clientAction('cancel', (b) => clientCancel(b));
@@ -171,7 +170,7 @@ app.get('/api/driver/me', wrap((req) => driverState(driverAuth(req))));
 app.post('/api/driver/status', wrap((req) => {
   const d = driverAuth(req);
   if (!req.body.online && d.jobId) throw bad('Finish or release your current trip first');
-  d.online = !!req.body.online;
+  setOnline(d, !!req.body.online);
   return driverState(d);
 }));
 app.post('/api/driver/location', wrap((req) => {
@@ -193,7 +192,7 @@ app.post('/api/driver/job/messages', wrap((req) => {
   addMessage(job, 'driver', t);
   return driverState(d);
 }));
-app.post('/api/driver/job/:action(arrived|start|complete|release)', wrap((req) => {
+app.post('/api/driver/job/:action(agree|arrived|start|complete|release)', wrap((req) => {
   const d = driverAuth(req);
   driverAdvance(d, req.params.action);
   return driverState(d);

@@ -36,7 +36,6 @@ export function bookingApi({ id, token }) {
   const post = (action, body = {}) => request(`/bookings/${id}/${action}`, { method: 'POST', body, headers });
   return {
     get: () => request(`/bookings/${id}`, { headers }),
-    agree: () => post('agree'),
     notAgreed: () => post('not-agreed'),
     retry: () => post('retry'),
     cancel: () => post('cancel'),

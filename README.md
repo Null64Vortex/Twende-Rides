@@ -29,8 +29,10 @@ Pickup is the phone's GPS location. There are no fixed prices.
 2. The driver sees the destination and how far away the client is, but **not where the client is**.
 3. After accepting, the driver gets the client's phone number and **calls to agree on a price**.
    The client sees the driver's photo, name, vehicle model, colour and number plate.
-4. The client taps **"We agreed on the price"**. Only then does the driver see the client's live location
+4. The **driver** taps **"We agreed on the price"**. Only then does the driver see the client's live location
    (with a Google Maps "Navigate" button).
+   If they can't agree, the **client** taps **"Cancel, we didn't agree"**: the driver is released and the
+   request goes to the next nearest driver.
 5. Driver taps **I've arrived → Start trip / Package picked → Complete**. The client follows on the map and rates the driver.
 
 ## Project layout
