@@ -6,11 +6,10 @@ import { localDateTime, validPhone } from '../lib.js';
 
 const AIRPORT_ID = 'ebb';
 
-export default function DetailsStep({ catalog, places, draft, update, next, back }) {
+export default function DetailsStep({ catalog, places, draft, update, next, back, gps, gpsError }) {
   const isDelivery = draft.service === 'delivery';
   const isAirport = draft.service === 'airport';
   const airport = places.find((p) => p.id === AIRPORT_ID);
-  const home = places.find((p) => p.id === 'kasangati');
   const vehicle = catalog.vehicles.find((v) => v.id === draft.vehicle);
   const [picker, setPicker] = useState(null);
   const [tried, setTried] = useState(false);
@@ -19,30 +18,33 @@ export default function DetailsStep({ catalog, places, draft, update, next, back
   useEffect(() => {
     if (!isAirport) return;
     if (draft.airportDirection === 'to' && draft.dropoff?.id !== AIRPORT_ID) {
-      update({ dropoff: airport, pickup: draft.pickup?.id === AIRPORT_ID ? home : draft.pickup });
+      update({ dropoff: airport, pickup: draft.pickup?.id === AIRPORT_ID ? gps : draft.pickup });
     }
     if (draft.airportDirection === 'from' && draft.pickup?.id !== AIRPORT_ID) {
-      update({ pickup: airport, dropoff: draft.dropoff?.id === AIRPORT_ID ? home : draft.dropoff });
+      update({ pickup: airport, dropoff: draft.dropoff?.id === AIRPORT_ID ? null : draft.dropoff });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAirport]);
 
   const setDirection = (dir) => {
     if (dir === draft.airportDirection) return;
-    if (dir === 'from') update({ airportDirection: 'from', pickup: airport, dropoff: draft.pickup?.id === AIRPORT_ID ? home : draft.pickup });
-    else update({ airportDirection: 'to', dropoff: airport, pickup: draft.dropoff?.id === AIRPORT_ID ? home : draft.dropoff });
+    if (dir === 'from') update({ airportDirection: 'from', pickup: airport, dropoff: null });
+    else update({ airportDirection: 'to', dropoff: airport, pickup: gps });
   };
 
+  const contact = isDelivery ? draft.sender : draft.me;
+  const contactKey = isDelivery ? 'sender' : 'me';
+
   const errors = {};
-  if (!draft.pickup) errors.pickup = 'Choose where to pick up';
-  if (!draft.dropoff) errors.dropoff = 'Choose where to drop off';
+  if (!draft.pickup) errors.pickup = gpsError ? 'Turn on location or choose a pickup place' : 'Choose where to pick up';
+  if (!draft.dropoff) errors.dropoff = 'Choose where to go';
   else if (draft.pickup && draft.pickup.id === draft.dropoff.id) errors.dropoff = 'Drop-off must be different from pickup';
   if (!isDelivery && draft.when === 'later') {
     if (!draft.at || new Date(draft.at).getTime() < Date.now() + 14 * 60000) errors.at = 'Pick a time at least 15 minutes from now';
   }
+  if (contact.name.trim().length < 2) errors.contactName = 'Enter your name';
+  if (!validPhone(contact.phone)) errors.contactPhone = 'Enter a valid number, e.g. 0772 123456';
   if (isDelivery) {
-    if (!draft.sender.name.trim()) errors.senderName = 'Enter the sender’s name';
-    if (!validPhone(draft.sender.phone)) errors.senderPhone = 'Enter a valid number, e.g. 0772 123456';
     if (!draft.receiver.name.trim()) errors.receiverName = 'Enter the receiver’s name';
     if (!validPhone(draft.receiver.phone)) errors.receiverPhone = 'Enter a valid number, e.g. 0772 123456';
     if (!draft.contents) errors.contents = 'Tell us what’s inside';
@@ -62,7 +64,7 @@ export default function DetailsStep({ catalog, places, draft, update, next, back
   return (
     <div className="screen">
       <StepHeader step={4} title={isDelivery ? 'Delivery details' : 'Trip details'}
-        subtitle={isDelivery ? 'Who is sending, who is receiving, and what' : 'Where and when'} onBack={back} />
+        subtitle={isDelivery ? 'Who is sending, who is receiving, and what' : 'Where, when, and how to reach you'} onBack={back} />
       <div className="screen-body">
         {isAirport && (
           <Segmented value={draft.airportDirection} onChange={setDirection}
@@ -76,6 +78,7 @@ export default function DetailsStep({ catalog, places, draft, update, next, back
           <PlaceField kind="dropoff" label="Drop-off" place={draft.dropoff} locked={lockedDropoff}
             error={err('dropoff')} onClick={() => setPicker('dropoff')} />
         </div>
+        {gpsError && !draft.pickup?.gps && !lockedPickup && <div className="hint-card">📍 {gpsError}</div>}
 
         {isAirport && draft.airportDirection === 'from' && (
           <Field label="Flight number (optional)">
@@ -99,21 +102,25 @@ export default function DetailsStep({ catalog, places, draft, update, next, back
           </div>
         )}
 
+        <div className="form-block">
+          <span className="block-title">
+            {isDelivery ? <><span className="dot dot-pickup" /> Who is sending? (you)</> : 'Your details'}
+          </span>
+          <div className="two-col">
+            <Field label="Name" error={err('contactName')}>
+              <input className="input" placeholder="Your name" autoComplete="name" value={contact.name}
+                onChange={(e) => setPerson(contactKey, 'name', e.target.value)} />
+            </Field>
+            <Field label="Phone" error={err('contactPhone')}>
+              <input className="input" type="tel" inputMode="tel" autoComplete="tel" placeholder="07XX XXX XXX" value={contact.phone}
+                onChange={(e) => setPerson(contactKey, 'phone', e.target.value)} />
+            </Field>
+          </div>
+          <span className="muted small">📞 Your driver will call this number to agree on the price.</span>
+        </div>
+
         {isDelivery && (
           <>
-            <div className="form-block">
-              <span className="block-title"><span className="dot dot-pickup" /> Who is sending?</span>
-              <div className="two-col">
-                <Field label="Name" error={err('senderName')}>
-                  <input className="input" placeholder="Sender name" value={draft.sender.name}
-                    onChange={(e) => setPerson('sender', 'name', e.target.value)} />
-                </Field>
-                <Field label="Phone" error={err('senderPhone')}>
-                  <input className="input" type="tel" inputMode="tel" placeholder="07XX XXX XXX" value={draft.sender.phone}
-                    onChange={(e) => setPerson('sender', 'phone', e.target.value)} />
-                </Field>
-              </div>
-            </div>
             <div className="form-block">
               <span className="block-title"><span className="dot dot-dropoff" /> Who is receiving?</span>
               <div className="two-col">
@@ -168,7 +175,7 @@ export default function DetailsStep({ catalog, places, draft, update, next, back
         <PlaceSearch
           title={picker === 'pickup' ? 'Search pickup location' : 'Where to?'}
           places={places.filter((p) => !isAirport || p.id !== AIRPORT_ID)}
-          current={picker === 'pickup' ? home : null}
+          current={picker === 'pickup' ? gps : null}
           exclude={picker === 'pickup' ? draft.dropoff?.id : draft.pickup?.id}
           onClose={() => setPicker(null)}
           onPick={(p) => { update({ [picker]: p }); setPicker(null); }}
@@ -188,7 +195,7 @@ function PlaceField({ kind, label, place, locked, error, onClick }) {
         <strong className={place ? '' : 'placeholder'}>{place ? place.name : `Add ${label.toLowerCase()}`}</strong>
         {error ? <em className="field-error">{error}</em> : place && <em>{place.area}</em>}
       </span>
-      {locked ? <span className="pf-lock">✈️</span> : <Icon name="search" size={18} className="pf-ico" />}
+      {locked ? <span className="pf-lock">✈️</span> : <Icon name={place?.gps ? 'locate' : 'search'} size={18} className="pf-ico" />}
     </button>
   );
 }

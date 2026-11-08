@@ -1,5 +1,3 @@
-import { haversineKm } from './places.js';
-
 export const SERVICES = [
   { id: 'ride', emoji: '🚖', name: 'Ride', title: 'Ride', tagline: 'You travel' },
   { id: 'airport', emoji: '✈️', name: 'Airport', title: 'Airport Pickup', tagline: 'You travel to/from Entebbe' },
@@ -43,12 +41,12 @@ export const VEHICLES = [
 // Travel text can be adjusted per vehicle (an "SUV" makes no sense on a boda).
 export const TIERS = [
   {
-    id: 'basic', name: 'Basic', multiplier: 1,
+    id: 'basic', name: 'Basic',
     travel: { summary: 'Normal', perks: ['Everyday ride'] },
     delivery: { summary: 'Normal delivery, same day', perks: ['Same day'] },
   },
   {
-    id: 'standard', name: 'Standard', multiplier: 1.1,
+    id: 'standard', name: 'Standard',
     travel: {
       summary: 'AC + Clean', perks: ['Air conditioning', 'Clean vehicle'],
       boda: { summary: 'Clean bike + Spare helmet', perks: ['Clean bike', 'Spare helmet'] },
@@ -56,7 +54,7 @@ export const TIERS = [
     delivery: { summary: 'Careful handling + Tracking', perks: ['Careful handling', 'Live tracking'] },
   },
   {
-    id: 'premium', name: 'Premium', multiplier: 1.4,
+    id: 'premium', name: 'Premium',
     travel: {
       summary: 'Big car + Water + Charger', perks: ['Bigger car', 'Free water', 'Phone charger'],
       boda: { summary: 'Big bike + Water + Charger', perks: ['Bigger bike', 'Free water', 'Phone charger'] },
@@ -65,7 +63,7 @@ export const TIERS = [
     delivery: { summary: 'Express + Insured + Photo on delivery', perks: ['Express', 'Insured', 'Photo on delivery'] },
   },
   {
-    id: 'vip', name: 'VIP', multiplier: 2,
+    id: 'vip', name: 'VIP',
     travel: {
       summary: 'SUV + Best driver + Airport meet inside', perks: ['SUV', 'Best driver', 'Airport meet inside'],
       boda: { summary: 'Best rider + Rain gear + Airport meet inside', perks: ['Best rider', 'Rain gear', 'Airport meet inside'] },
@@ -82,9 +80,9 @@ export const CONTENTS = [
 ];
 
 export const SIZES = [
-  { id: 'small', name: 'Small', hint: 'Fits in a bag', fee: 0 },
-  { id: 'medium', name: 'Medium', hint: 'Fits on a car seat', fee: 2000 },
-  { id: 'big', name: 'Big', hint: 'Needs a van', fee: 5000 },
+  { id: 'small', name: 'Small', hint: 'Fits in a bag' },
+  { id: 'medium', name: 'Medium', hint: 'Fits on a car seat' },
+  { id: 'big', name: 'Big', hint: 'Needs a van' },
 ];
 
 export const PAYMENTS = [
@@ -92,36 +90,12 @@ export const PAYMENTS = [
   { id: 'momo', emoji: '📱', name: 'Mobile Money', hint: 'MTN MoMo or Airtel Money' },
 ];
 
-// UGX pricing. Speeds are average km/h in Kampala traffic.
-export const PRICING = {
-  boda: { base: 2000, perKm: 700, min: 3000, speed: 28, pickupEta: 3 },
-  car: { base: 5000, perKm: 1700, min: 8000, speed: 22, pickupEta: 6 },
-  van: { base: 12000, perKm: 3000, min: 20000, speed: 20, pickupEta: 9 },
-};
+// Average km/h in Kampala traffic; long trips (expressway) move faster.
+const SPEED = { boda: 28, car: 22, van: 20 };
+export const ROAD_FACTOR = 1.3;
 
-const SERVICE_FEES = {
-  airport: { boda: 3000, car: 10000, van: 15000 },
-  moving: { boda: 3000, car: 10000, van: 30000 },
-};
-
-const ROAD_FACTOR = 1.3; // straight line -> road distance
-
-// Long trips (e.g. Entebbe Expressway) move faster than city traffic.
-export const speedFor = (vehicleId, km) => PRICING[vehicleId].speed * (km > 20 ? 1.8 : 1);
-
-export function quote({ service, vehicle, tier, pickup, dropoff, size }) {
-  const p = PRICING[vehicle.id];
-  const km = Math.max(1, haversineKm(pickup, dropoff) * ROAD_FACTOR);
-  let fee = 0;
-  if (service.id === 'airport' || service.id === 'moving') fee = SERVICE_FEES[service.id][vehicle.id];
-  if (service.id === 'delivery') fee = SIZES.find((s) => s.id === size)?.fee ?? 0;
-  const raw = (p.base + p.perKm * km + fee) * tier.multiplier;
-  const price = Math.max(p.min, Math.round(raw / 500) * 500);
-  return {
-    price,
-    currency: 'UGX',
-    distanceKm: Math.round(km * 10) / 10,
-    durationMin: Math.max(3, Math.round((km / speedFor(vehicle.id, km)) * 60)),
-    pickupEtaMin: p.pickupEta,
-  };
+export function etaMinutes(vehicleId, straightKm) {
+  const km = straightKm * ROAD_FACTOR;
+  const speed = SPEED[vehicleId] * (km > 20 ? 1.8 : 1);
+  return Math.max(1, Math.ceil((km / speed) * 60));
 }

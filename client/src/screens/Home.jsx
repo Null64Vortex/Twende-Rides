@@ -6,9 +6,10 @@ import { greeting } from '../lib.js';
 
 const POPULAR = ['ebb', 'acacia', 'ntinda', 'garden-city', 'makerere'];
 
-export default function Home({ catalog, places, draft, onDestination, onQuick }) {
+export default function Home({ catalog, places, draft, gps, gpsError, nearby, onDestination, onQuick }) {
   const [searching, setSearching] = useState(false);
   const popular = POPULAR.map((id) => places.find((p) => p.id === id)).filter(Boolean);
+  const totalNearby = nearby ? nearby.boda + nearby.car + nearby.van : null;
 
   return (
     <div className="screen home">
@@ -16,7 +17,7 @@ export default function Home({ catalog, places, draft, onDestination, onQuick })
         <header className="hero">
           <div className="hero-top">
             <Logo light />
-            <button className="hero-avatar" aria-label="Account"><Icon name="user" size={18} /></button>
+            <a className="hero-driver" href="/driver">Drive with us</a>
           </div>
           <p className="hero-greet">{greeting()} 👋</p>
           <h1>Where are you<br />going today?</h1>
@@ -25,7 +26,18 @@ export default function Home({ catalog, places, draft, onDestination, onQuick })
             <span className="search-bar-text">Where are you going?</span>
             <span className="search-bar-time"><Icon name="clock" size={15} /> Now</span>
           </button>
-          <div className="hero-from"><span className="pulse-dot" /> Pickup from <b>{draft.pickup?.name}</b></div>
+          <div className="hero-from">
+            {gps ? <><span className="pulse-dot" /> Pickup from your <b>current location</b></>
+              : gpsError ? <><span className="pulse-dot off" /> Location is off. You can choose a pickup place.</>
+                : <><span className="pulse-dot wait" /> Finding your location...</>}
+          </div>
+          {totalNearby != null && (
+            <div className="hero-nearby">
+              {totalNearby > 0
+                ? <>🟢 <b>{totalNearby}</b> {totalNearby === 1 ? 'driver' : 'drivers'} online near you</>
+                : <>No drivers online near you right now</>}
+            </div>
+          )}
         </header>
 
         <section className="quick">
@@ -51,19 +63,30 @@ export default function Home({ catalog, places, draft, onDestination, onQuick })
         </section>
 
         <section className="home-section">
-          <button className="promo" onClick={() => onQuick('airport')}>
+          <div className="how-card">
+            <strong>No fixed prices</strong>
+            <ol>
+              <li><span>1</span>Tell us where you're going.</li>
+              <li><span>2</span>The nearest driver accepts. You see their photo and number plate.</li>
+              <li><span>3</span>They call you and you agree on the price together.</li>
+            </ol>
+          </div>
+        </section>
+
+        <section className="home-section">
+          <a className="promo" href="/driver">
             <div>
-              <span className="promo-tag">VIP Airport</span>
-              <strong>Flying out of Entebbe?</strong>
-              <p>Your driver meets you inside arrivals with your name on a sign.</p>
+              <span className="promo-tag">For drivers</span>
+              <strong>Own a boda, car or van?</strong>
+              <p>Sign up in 2 minutes, go online, and get requests from clients near you.</p>
             </div>
-            <span className="promo-emoji">✈️</span>
-          </button>
+            <span className="promo-emoji">🏍️</span>
+          </a>
         </section>
 
         <section className="home-section trust">
-          <div><Icon name="shield" size={18} /> Verified drivers</div>
-          <div><Icon name="wallet" size={18} /> Cash or Mobile Money</div>
+          <div><Icon name="shield" size={18} /> Driver photo & plate</div>
+          <div><Icon name="phone" size={18} /> Price agreed by phone</div>
         </section>
       </div>
 

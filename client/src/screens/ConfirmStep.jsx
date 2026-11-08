@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react';
-import { api, bookingRequest, coreRequest } from '../api.js';
+import { api, bookingRequest } from '../api.js';
 import Icon from '../components/Icon.jsx';
 import MapView from '../components/MapView.jsx';
-import { Field, StepHeader, Spinner } from '../components/ui.jsx';
-import { fmtDateTime, fmtUGX, validPhone } from '../lib.js';
+import { StepHeader, Spinner } from '../components/ui.jsx';
+import { fmtDateTime, personWord } from '../lib.js';
 
 export default function ConfirmStep({ catalog, draft, update, back, onBooked }) {
-  const [quote, setQuote] = useState(null);
   const [route, setRoute] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [tried, setTried] = useState(false);
 
   const service = catalog.services.find((s) => s.id === draft.service);
   const vehicle = catalog.vehicles.find((v) => v.id === draft.vehicle);
@@ -18,23 +16,20 @@ export default function ConfirmStep({ catalog, draft, update, back, onBooked }) 
   const size = catalog.sizes.find((s) => s.id === draft.size);
   const contents = catalog.contents.find((c) => c.id === draft.contents);
   const isDelivery = draft.service === 'delivery';
+  const word = personWord(draft.vehicle);
+  const contact = isDelivery ? draft.sender : draft.me;
 
   useEffect(() => {
-    api.quote(coreRequest(draft)).then(setQuote).catch((e) => setError(e.message));
-    api.route(draft.pickup.id, draft.dropoff.id).then((r) => setRoute(r.points)).catch(() => {});
+    api.route(draft.pickup, draft.dropoff).then(setRoute).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const momoError = draft.payment === 'momo' && !validPhone(draft.momoPhone) ? 'Enter your MTN or Airtel number' : null;
-
-  async function confirm() {
-    setTried(true);
-    if (momoError || !quote) return;
+  async function request() {
     setBusy(true);
     setError(null);
     try {
-      const booking = await api.book(bookingRequest(draft));
-      onBooked(booking.id);
+      const { token, booking } = await api.book(bookingRequest(draft));
+      onBooked({ id: booking.id, token });
     } catch (e) {
       setError(e.message);
       setBusy(false);
@@ -43,10 +38,10 @@ export default function ConfirmStep({ catalog, draft, update, back, onBooked }) 
 
   return (
     <div className="screen">
-      <StepHeader step={5} title="Confirm booking" subtitle="Check everything looks right" onBack={back} />
+      <StepHeader step={5} title="Confirm request" subtitle="Check everything looks right" onBack={back} />
       <div className="screen-body">
         <div className="confirm-map">
-          <MapView pickup={draft.pickup} dropoff={draft.dropoff} tripRoute={route} fitPoints={route}
+          <MapView pickup={draft.pickup} dropoff={draft.dropoff} tripRoute={route?.points} fitPoints={route?.points}
             fitKey={route ? 'r' : 'p'} interactive={false} padTop={28} padBottom={28} />
         </div>
 
@@ -66,24 +61,25 @@ export default function ConfirmStep({ catalog, draft, update, back, onBooked }) 
           </div>
 
           <dl className="summary-rows">
-            {isDelivery && (
-              <>
-                <div><dt>Sender</dt><dd>{draft.sender.name} · {draft.sender.phone}</dd></div>
-                <div><dt>Receiver</dt><dd>{draft.receiver.name} · {draft.receiver.phone}</dd></div>
-              </>
-            )}
+            <div><dt>{isDelivery ? 'Sender' : 'Your phone'}</dt><dd>{isDelivery ? `${contact.name} · ` : ''}{contact.phone}</dd></div>
+            {isDelivery && <div><dt>Receiver</dt><dd>{draft.receiver.name} · {draft.receiver.phone}</dd></div>}
             {draft.service === 'airport' && draft.flight && <div><dt>Flight</dt><dd>{draft.flight.toUpperCase()}</dd></div>}
-            <div><dt>Distance</dt><dd>{quote ? `${quote.distanceKm} km · about ${quote.durationMin} min` : '…'}</dd></div>
+            {route && <div><dt>Distance</dt><dd>about {Math.round(route.km)} km</dd></div>}
           </dl>
+        </div>
 
-          <div className="price-row">
-            <span>Total</span>
-            <strong>{quote ? fmtUGX(quote.price) : <Spinner />}</strong>
-          </div>
+        <div className="how-card">
+          <strong>How it works</strong>
+          <ol>
+            <li><span>1</span>We alert the nearest available {word}.</li>
+            <li><span>2</span>You see their photo, vehicle and number plate.</li>
+            <li><span>3</span>They <b>call you</b> and you agree on the price together.</li>
+            <li><span>4</span>Only then is your location shared so they can come to you.</li>
+          </ol>
         </div>
 
         <div className="form-block">
-          <span className="block-title">Pay with</span>
+          <span className="block-title">I'll pay with</span>
           <div className="pay-list">
             {catalog.payments.map((p) => (
               <button key={p.id} type="button" className={`pay-option ${draft.payment === p.id ? 'active' : ''}`}
@@ -94,19 +90,13 @@ export default function ConfirmStep({ catalog, draft, update, back, onBooked }) 
               </button>
             ))}
           </div>
-          {draft.payment === 'momo' && (
-            <Field label="Mobile Money number" error={tried ? momoError : null}>
-              <input className="input" type="tel" inputMode="tel" placeholder="07XX XXX XXX" value={draft.momoPhone}
-                onChange={(e) => update({ momoPhone: e.target.value })} />
-            </Field>
-          )}
         </div>
 
         {error && <div className="alert">{error}</div>}
       </div>
       <div className="screen-footer">
-        <button className="btn btn-primary" onClick={confirm} disabled={busy || !quote}>
-          {busy ? <Spinner /> : <>Confirm Booking{quote && <span className="btn-sub">{fmtUGX(quote.price)}</span>}</>}
+        <button className="btn btn-primary" onClick={request} disabled={busy}>
+          {busy ? <Spinner /> : <>Request {word} <Icon name="arrow" size={18} /></>}
         </button>
       </div>
     </div>

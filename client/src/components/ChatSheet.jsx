@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon.jsx';
 import { Avatar } from './ui.jsx';
 
-const QUICK = ['Where are you?', "I'm at the gate", 'Please call me', 'Handle with care'];
-
-export default function ChatSheet({ driver, messages, onSend, onClose, isDelivery }) {
+// Two-way chat. `role` is who is using this screen: 'client' or 'driver'.
+export default function ChatSheet({ other, role, messages, quick = [], onSend, onClose }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const endRef = useRef(null);
@@ -23,23 +22,26 @@ export default function ChatSheet({ driver, messages, onSend, onClose, isDeliver
       <div className="chat-sheet">
         <header className="chat-head">
           <button className="icon-btn" onClick={onClose} aria-label="Close chat"><Icon name="back" /></button>
-          <Avatar name={driver.name} size={40} />
-          <div><strong>{driver.name}</strong><small>{driver.plate} · usually replies fast</small></div>
+          <Avatar name={other.name} src={other.photo} size={40} />
+          <div><strong>{other.name}</strong><small>{other.sub}</small></div>
         </header>
         <div className="chat-list">
-          {messages.map((m, i) => (
-            <div key={i} className={`bubble ${m.from === 'me' ? 'me' : 'them'}`}>
+          {messages.length === 0 && <p className="muted center small">No messages yet. Say hello 👋</p>}
+          {messages.map((m, i) => (m.from === 'system' ? (
+            <div key={i} className="bubble-system">{m.text}</div>
+          ) : (
+            <div key={i} className={`bubble ${m.from === role ? 'me' : 'them'}`}>
               {m.text}
               <time>{new Date(m.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time>
             </div>
-          ))}
+          )))}
           <div ref={endRef} />
         </div>
-        <div className="chat-quick">
-          {QUICK.filter((q) => isDelivery || q !== 'Handle with care').map((q) => (
-            <button key={q} className="chip" onClick={() => send(q)}>{q}</button>
-          ))}
-        </div>
+        {quick.length > 0 && (
+          <div className="chat-quick">
+            {quick.map((q) => <button key={q} className="chip" onClick={() => send(q)}>{q}</button>)}
+          </div>
+        )}
         <form className="chat-input" onSubmit={(e) => { e.preventDefault(); send(text); }}>
           <input placeholder="Type a message" value={text} onChange={(e) => setText(e.target.value)} maxLength={300} />
           <button className="send-btn" disabled={!text.trim() || sending} aria-label="Send"><Icon name="send" size={18} /></button>

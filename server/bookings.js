@@ -1,180 +1,252 @@
 import crypto from 'node:crypto';
-import { pickDriver } from './drivers.js';
-import { route, pointAlong, offsetPoint } from './routing.js';
-import { speedFor } from './catalog.js';
+import { route } from './routing.js';
+import { haversineKm } from './places.js';
+import { etaMinutes, ROAD_FACTOR } from './catalog.js';
+import { getDriver, nearestAvailable, publicDriver } from './drivers.js';
 
-// Simulated timeline (milliseconds). Kept short so the demo is fun to watch.
-const SEARCH_MS = 4500;
-const TO_PICKUP_MS = 20000;
-const AT_PICKUP_MS = 6000;
-const TRIP_MS = 45000;
+// How long each driver has to answer, and how long we keep searching.
+const OFFER_MS = 30_000;
+const SEARCH_TIMEOUT_MS = 120_000;
+const MAX_KM = { boda: 10, car: 20, van: 25 };
+
+// Status flow:
+// searching -> accepted (driver calls client to agree on price) -> to_pickup (client confirmed; location shared)
+// -> arrived -> in_trip -> done.   Also: no_drivers, cancelled.
+const REVEALED = ['to_pickup', 'arrived', 'in_trip', 'done'];
+
+export class BookingError extends Error {}
+const fail = (m) => { throw new BookingError(m); };
 
 const bookings = new Map();
+const hex = (n) => crypto.randomBytes(n).toString('hex');
+const first = (name) => name.split(' ')[0];
+const word = (b) => (b.vehicle.id === 'boda' ? 'rider' : 'driver');
+const round1 = (n) => Math.round(n * 10) / 10;
 
-const word = (vehicleId) => (vehicleId === 'boda' ? 'rider' : 'driver');
-const cap = (s) => s[0].toUpperCase() + s.slice(1);
-
-export async function createBooking(data) {
-  const id = crypto.randomBytes(3).toString('hex').toUpperCase();
-  const driver = pickDriver(data.vehicle.id, data.tier.id);
-  const start = offsetPoint(data.pickup, 1.2 + Math.random() * 1.3);
-  const [toPickup, trip] = await Promise.all([route(start, data.pickup), route(data.pickup, data.dropoff)]);
+export function createBooking(data) {
+  let id;
+  do { id = hex(3).toUpperCase(); } while (bookings.has(id));
   const now = Date.now();
-  const matchedAt = now + SEARCH_MS;
   const b = {
     id,
+    token: hex(16),
     ...data,
-    driver,
-    routes: { toPickup, trip },
-    createdAt: now,
-    matchedAt,
-    startAt: data.schedule.mode === 'now' ? matchedAt : null,
-    cancelledAt: null,
-    rating: null,
+    status: 'searching',
+    searchStartedAt: now,
+    offer: null,
+    declined: new Set(),
+    driverId: null,
+    clientPos: data.pickup.gps ? { lat: data.pickup.lat, lng: data.pickup.lng } : null,
+    tripRoute: null,
     messages: [],
+    rating: null,
+    createdAt: now,
   };
-  const first = driver.name.split(' ')[0];
-  b.messages.push({
-    from: 'driver',
-    text: data.schedule.mode === 'now'
-      ? `Hello! I'm ${first}, your ${word(data.vehicle.id)}. Coming to ${data.pickup.name} now ${data.vehicle.emoji}`
-      : `Hello! I'm ${first}. I've received your booking and will be there on time 👍`,
-    at: matchedAt + 2500,
-  });
   bookings.set(id, b);
-  return view(b);
+  route(data.pickup, data.dropoff).then((r) => { b.tripRoute = r; }).catch(() => {});
+  dispatch(b);
+  return b;
 }
 
-export const getBooking = (id) => {
+export function getClientBooking(id, token) {
   const b = bookings.get(id);
-  return b ? view(b) : null;
-};
-
-function phaseOf(b, now) {
-  if (b.cancelledAt) return { phase: 'cancelled' };
-  if (now < b.matchedAt) return { phase: 'searching' };
-  if (!b.startAt) return { phase: 'scheduled' };
-  const t = now - b.startAt;
-  if (t < TO_PICKUP_MS) return { phase: 'to_pickup', f: t / TO_PICKUP_MS };
-  if (t < TO_PICKUP_MS + AT_PICKUP_MS) return { phase: 'at_pickup' };
-  const t2 = t - TO_PICKUP_MS - AT_PICKUP_MS;
-  if (t2 < TRIP_MS) return { phase: 'in_trip', f: t2 / TRIP_MS };
-  return { phase: 'done' };
+  return b && b.token === token ? b : null;
 }
 
-function labelFor(b, phase) {
-  const w = word(b.vehicle.id);
-  if (b.service.id === 'delivery') {
-    return {
-      searching: `Finding your ${w}...`,
-      scheduled: `${cap(w)} booked`,
-      to_pickup: `${cap(w)} heading to pickup`,
-      at_pickup: 'Package Picked',
-      in_trip: 'On the way',
-      done: 'Delivered',
-      cancelled: 'Delivery cancelled',
-    }[phase];
-  }
-  return {
-    searching: `Finding your ${w}...`,
-    scheduled: 'Trip scheduled',
-    to_pickup: `${cap(w)} on the way`,
-    at_pickup: `${cap(w)} has arrived`,
-    in_trip: 'On trip',
-    done: 'You have arrived',
-    cancelled: 'Trip cancelled',
-  }[phase];
-}
-
-function view(b) {
+// Offer the booking to the nearest free driver; move on when they decline or time out.
+function dispatch(b) {
+  if (b.status !== 'searching') return;
   const now = Date.now();
-  const { phase, f } = phaseOf(b, now);
-  const speed = speedFor(b.vehicle.id, b.routes.trip.km);
-  let driverPosition = null;
-  let etaMin = null;
-  if (phase === 'scheduled') driverPosition = null;
-  if (phase === 'to_pickup') {
-    driverPosition = pointAlong(b.routes.toPickup.points, f);
-    etaMin = Math.max(1, Math.ceil(((b.routes.toPickup.km * (1 - f)) / speed) * 60));
-  } else if (phase === 'at_pickup') {
-    driverPosition = [b.pickup.lat, b.pickup.lng];
-    etaMin = Math.max(1, Math.ceil((b.routes.trip.km / speed) * 60));
-  } else if (phase === 'in_trip') {
-    driverPosition = pointAlong(b.routes.trip.points, f);
-    etaMin = Math.max(1, Math.ceil(((b.routes.trip.km * (1 - f)) / speed) * 60));
-  } else if (phase === 'done') {
-    driverPosition = [b.dropoff.lat, b.dropoff.lng];
+  if (b.offer) {
+    const d = getDriver(b.offer.driverId);
+    if (now < b.offer.expiresAt && d?.online) return;
+    b.declined.add(b.offer.driverId);
+    clearOffer(b);
   }
+  const d = nearestAvailable(b.vehicle.id, b.pickup, MAX_KM[b.vehicle.id], b.declined);
+  if (d) {
+    b.offer = { driverId: d.id, expiresAt: now + OFFER_MS };
+    d.offerBookingId = b.id;
+    return;
+  }
+  if (now - b.searchStartedAt > SEARCH_TIMEOUT_MS) b.status = 'no_drivers';
+}
+
+function clearOffer(b) {
+  if (!b.offer) return;
+  const d = getDriver(b.offer.driverId);
+  if (d && d.offerBookingId === b.id) d.offerBookingId = null;
+  b.offer = null;
+}
+
+setInterval(() => { for (const b of bookings.values()) dispatch(b); }, 1000);
+
+const system = (b, text) => b.messages.push({ from: 'system', text, at: Date.now() });
+
+function releaseDriver(b, reason) {
+  const d = getDriver(b.driverId);
+  if (d && d.jobId === b.id) d.jobId = null;
+  if (b.driverId) b.declined.add(b.driverId);
+  b.driverId = null;
+  b.status = 'searching';
+  b.searchStartedAt = Date.now();
+  system(b, reason);
+  dispatch(b);
+}
+
+/* ---------------- Client actions ---------------- */
+
+export function clientAgree(b) {
+  if (b.status !== 'accepted') fail('There is no driver waiting for your confirmation');
+  b.status = 'to_pickup';
+  b.agreedAt = Date.now();
+  system(b, 'Price agreed. Your location is now shared with your driver.');
+}
+
+export function clientNotAgreed(b) {
+  if (b.status !== 'accepted') fail('Nothing to change');
+  const d = getDriver(b.driverId);
+  releaseDriver(b, `You and ${d ? first(d.name) : 'the driver'} didn't agree. Finding another ${word(b)}...`);
+}
+
+export function clientRetry(b) {
+  if (b.status !== 'no_drivers') fail('Already searching');
+  b.status = 'searching';
+  b.searchStartedAt = Date.now();
+  b.declined.clear();
+  dispatch(b);
+}
+
+export function clientCancel(b) {
+  if (b.status === 'done' || b.status === 'cancelled') fail('This booking is already finished');
+  clearOffer(b);
+  const d = getDriver(b.driverId);
+  if (d && d.jobId === b.id) d.jobId = null;
+  b.status = 'cancelled';
+  system(b, 'Booking cancelled by the client.');
+}
+
+export function clientLocation(b, { lat, lng }) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) fail('Bad location');
+  b.clientPos = { lat, lng };
+}
+
+export function clientRate(b, stars) {
+  if (b.status !== 'done') fail('You can rate after the trip');
+  if (b.rating) return;
+  b.rating = stars;
+  getDriver(b.driverId)?.ratings.push(stars);
+}
+
+export function addMessage(b, from, text) {
+  if (!['accepted', ...REVEALED].includes(b.status)) fail('Chat opens once a driver accepts');
+  b.messages.push({ from, text, at: Date.now() });
+}
+
+/* ---------------- Driver actions ---------------- */
+
+export function driverRespond(d, bookingId, accept) {
+  const b = bookings.get(bookingId);
+  if (!b || b.status !== 'searching' || b.offer?.driverId !== d.id) fail('This request is no longer available');
+  clearOffer(b);
+  if (accept) {
+    b.status = 'accepted';
+    b.driverId = d.id;
+    b.acceptedAt = Date.now();
+    d.jobId = b.id;
+    system(b, `${first(d.name)} accepted and will call you to agree on the price.`);
+  } else {
+    b.declined.add(d.id);
+    dispatch(b);
+  }
+}
+
+export const driverJob = (d) => (d.jobId ? bookings.get(d.jobId) || null : null);
+export const driverOffer = (d) => (d.offerBookingId ? bookings.get(d.offerBookingId) || null : null);
+
+const NEXT = { arrived: ['to_pickup', 'arrived'], start: ['arrived', 'in_trip'], complete: ['in_trip', 'done'] };
+
+export function driverAdvance(d, action) {
+  const b = driverJob(d);
+  if (!b) fail('You have no active trip');
+  if (action === 'release') {
+    releaseDriver(b, `${first(d.name)} can't take this trip. Finding another ${word(b)}...`);
+    return;
+  }
+  const step = NEXT[action];
+  if (!step) fail('Unknown action');
+  if (b.status !== step[0]) fail('That step is not available right now');
+  b.status = step[1];
+  if (b.status === 'done') {
+    d.jobId = null;
+    b.doneAt = Date.now();
+  }
+}
+
+/* ---------------- Views ---------------- */
+
+const placeView = (p) => ({ id: p.id, name: p.name, area: p.area, lat: p.lat, lng: p.lng, gps: !!p.gps });
+
+function etaFor(b, d) {
+  if (!d?.pos) return null;
+  if (['accepted', 'to_pickup'].includes(b.status)) return etaMinutes(b.vehicle.id, haversineKm(d.pos, b.clientPos || b.pickup));
+  if (b.status === 'in_trip') return etaMinutes(b.vehicle.id, haversineKm(d.pos, b.dropoff));
+  return null;
+}
+
+function shared(b) {
   return {
     id: b.id,
+    status: b.status,
     service: b.service.id,
     vehicle: b.vehicle.id,
     tier: b.tier.id,
-    pickup: b.pickup,
-    dropoff: b.dropoff,
     size: b.size,
     schedule: b.schedule,
     airport: b.airport,
-    delivery: b.delivery,
     payment: b.payment,
-    quote: b.quote,
-    phase,
-    progress: f ?? null,
-    statusLabel: labelFor(b, phase),
-    driver: phase === 'searching' ? null : b.driver,
-    driverPosition,
-    etaMin,
-    routes: { toPickup: b.routes.toPickup.points, trip: b.routes.trip.points },
-    messages: b.messages.filter((m) => m.at <= now).map(({ from, text, at }) => ({ from, text, at })),
-    rating: b.rating,
-    createdAt: b.createdAt,
+    dropoff: placeView(b.dropoff),
+    tripKm: round1(haversineKm(b.pickup, b.dropoff) * ROAD_FACTOR),
+    messages: b.messages,
   };
 }
 
-export function startBooking(id) {
-  const b = bookings.get(id);
-  if (!b) return null;
-  if (!b.startAt && !b.cancelledAt) b.startAt = Math.max(Date.now(), b.matchedAt);
-  return view(b);
+export function clientView(b) {
+  const d = b.driverId ? getDriver(b.driverId) : null;
+  return {
+    ...shared(b),
+    pickup: placeView(b.pickup),
+    clientPos: b.clientPos ? [b.clientPos.lat, b.clientPos.lng] : null,
+    client: b.client,
+    delivery: b.delivery,
+    driver: d ? publicDriver(d) : null,
+    etaMin: etaFor(b, d),
+    tripRoute: b.tripRoute?.points || null,
+    rating: b.rating,
+    searchingSec: b.status === 'searching' ? Math.round((Date.now() - b.searchStartedAt) / 1000) : null,
+  };
 }
 
-export function cancelBooking(id) {
-  const b = bookings.get(id);
-  if (!b) return null;
-  const { phase } = phaseOf(b, Date.now());
-  if (phase === 'done') throw new Error('This trip is already finished');
-  b.cancelledAt = Date.now();
-  return view(b);
-}
-
-export function rateBooking(id, stars) {
-  const b = bookings.get(id);
-  if (!b) return null;
-  b.rating = stars;
-  return view(b);
-}
-
-export function addMessage(id, text) {
-  const b = bookings.get(id);
-  if (!b) return null;
-  const now = Date.now();
-  b.messages.push({ from: 'me', text, at: now });
-  const current = view(b);
-  b.messages.push({ from: 'driver', text: replyTo(text, b, current), at: now + 1800 + Math.random() * 1500 });
-  return view(b);
-}
-
-function replyTo(text, b, current) {
-  const t = text.toLowerCase();
-  if (/where|how long|far|eta/.test(t)) {
-    if (current.phase === 'to_pickup') return `I'm about ${current.etaMin} min away from ${b.pickup.name}.`;
-    if (current.phase === 'in_trip') return `We're about ${current.etaMin} min from ${b.dropoff.name}.`;
-    if (current.phase === 'at_pickup') return `I'm already at ${b.pickup.name}.`;
-  }
-  if (/gate|stage|wait|here|outside/.test(t)) return "Okay, no problem. I'll find you there.";
-  if (/call/.test(t)) return 'Sure, you can call me anytime 📞';
-  if (/care|fragile|careful/.test(t)) return "Don't worry, I'll handle it with care.";
-  if (/thank|webale/.test(t)) return 'You are welcome! 🙏';
-  const generic = ['Okay 👍', 'Noted, thank you!', "Sawa, I'm coming."];
-  return generic[Math.floor(Math.random() * generic.length)];
+// The driver only learns where the client is after the client confirms the price agreement.
+export function driverView(b, d) {
+  const revealed = REVEALED.includes(b.status) && b.driverId === d.id;
+  const isOffer = b.status === 'searching';
+  const target = b.clientPos || b.pickup;
+  return {
+    ...shared(b),
+    messages: isOffer ? [] : b.messages,
+    revealed,
+    client: {
+      name: isOffer ? first(b.client.name) : b.client.name,
+      phone: isOffer ? null : b.client.phone,
+    },
+    contents: b.delivery?.contents || null,
+    receiver: revealed ? b.delivery?.receiver || null : null,
+    pickupKm: d.pos ? round1(haversineKm(d.pos, b.pickup)) : null,
+    pickup: revealed ? placeView(b.pickup) : null,
+    clientPos: revealed ? [target.lat, target.lng] : null,
+    tripRoute: revealed ? b.tripRoute?.points || null : null,
+    etaMin: revealed ? etaFor(b, d) : null,
+    offerExpiresInMs: isOffer && b.offer ? Math.max(0, b.offer.expiresAt - Date.now()) : null,
+  };
 }

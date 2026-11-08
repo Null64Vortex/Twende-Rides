@@ -1,7 +1,5 @@
-import { useEffect, useState } from 'react';
-import { api, coreRequest } from '../api.js';
 import { OptionCard, StepHeader } from '../components/ui.jsx';
-import { fmtUGX, tierInfo } from '../lib.js';
+import { tierInfo } from '../lib.js';
 
 const ADVANCE_DELAY = 170;
 
@@ -25,7 +23,7 @@ export function ServiceStep({ catalog, draft, update, next, back }) {
   );
 }
 
-export function VehicleStep({ catalog, draft, update, next, back }) {
+export function VehicleStep({ catalog, draft, update, next, back, nearby }) {
   const isDelivery = draft.service === 'delivery';
   const pick = (v) => {
     const size = v.sizes.includes(draft.size) ? draft.size : v.sizes[0];
@@ -40,35 +38,24 @@ export function VehicleStep({ catalog, draft, update, next, back }) {
         onBack={back} />
       <div className="screen-body">
         <div className="option-list">
-          {catalog.vehicles.map((v) => (
-            <OptionCard key={v.id} emoji={v.emoji} title={v.name} desc={v.desc[draft.service]}
-              selected={draft.vehicle === v.id} onClick={() => pick(v)}
-              right={<span className="pill">{isDelivery ? sizeLabel(v.sizes) : v.seats.replace(' passengers', '').replace(' passenger', '')}</span>} />
-          ))}
+          {catalog.vehicles.map((v) => {
+            const count = nearby?.[v.id];
+            return (
+              <OptionCard key={v.id} emoji={v.emoji} title={v.name} desc={v.desc[draft.service]}
+                selected={draft.vehicle === v.id} onClick={() => pick(v)}
+                right={count == null ? null : (
+                  <span className={`pill ${count ? 'pill-live' : ''}`}>{count ? `${count} nearby` : 'None nearby'}</span>
+                )} />
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-function sizeLabel(sizes) {
-  return sizes.length === 1 ? 'Small' : sizes.length === 2 ? 'Up to medium' : 'Any size';
-}
-
 export function ClassStep({ catalog, draft, update, next, back }) {
   const isDelivery = draft.service === 'delivery';
-  const [prices, setPrices] = useState({});
-
-  useEffect(() => {
-    if (!draft.pickup || !draft.dropoff || draft.pickup.id === draft.dropoff.id) return;
-    let alive = true;
-    Promise.all(catalog.tiers.map((t) => api.quote(coreRequest({ ...draft, tier: t.id })).then((q) => [t.id, q.price])))
-      .then((pairs) => alive && setPrices(Object.fromEntries(pairs)))
-      .catch(() => {});
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const pick = (id) => { update({ tier: id }); setTimeout(next, ADVANCE_DELAY); };
   return (
     <div className="screen">
@@ -80,14 +67,13 @@ export function ClassStep({ catalog, draft, update, next, back }) {
             const info = tierInfo(t, draft.service, draft.vehicle);
             return (
               <OptionCard key={t.id} emoji={TIER_EMOJI[t.id]} title={t.name} desc={info.summary}
-                selected={draft.tier === t.id} onClick={() => pick(t.id)}
-                right={prices[t.id] ? <span className="price-tag">{fmtUGX(prices[t.id])}</span> : null}>
+                selected={draft.tier === t.id} onClick={() => pick(t.id)}>
                 <span className="perks">{info.perks.map((p) => <span key={p}>{p}</span>)}</span>
               </OptionCard>
             );
           })}
         </div>
-        {!draft.dropoff && <p className="muted small center">You'll see the exact price after adding your drop-off.</p>}
+        <p className="muted small center">No fixed prices. You agree on the price with your driver by phone.</p>
       </div>
     </div>
   );

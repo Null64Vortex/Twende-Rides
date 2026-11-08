@@ -1,5 +1,3 @@
-export const fmtUGX = (n) => `${Math.round(n).toLocaleString('en-US')} UGX`;
-
 export function greeting() {
   const h = new Date().getHours();
   if (h < 12) return 'Good morning';
@@ -7,7 +5,8 @@ export function greeting() {
   return 'Good evening';
 }
 
-export const initials = (name) => name.split(' ').map((s) => s[0]).slice(0, 2).join('').toUpperCase();
+export const initials = (name) => name.split(' ').filter(Boolean).map((s) => s[0]).slice(0, 2).join('').toUpperCase();
+export const firstName = (name) => (name || '').split(' ')[0];
 
 const GRADIENTS = [
   ['#FFB800', '#FF7A00'],
@@ -25,6 +24,7 @@ export function gradientFor(s) {
 
 export const personWord = (vehicle) => (vehicle === 'boda' ? 'rider' : 'driver');
 export const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+export const telLink = (phone) => `tel:${String(phone).replace(/\s/g, '')}`;
 
 export const validPhone = (p) => /^(?:\+?256|0)7\d{8}$/.test(String(p || '').replace(/[\s-]/g, ''));
 
@@ -44,4 +44,23 @@ export function tierInfo(tier, service, vehicle) {
   if (service === 'delivery') return tier.delivery;
   const { summary, perks } = { ...tier.travel, ...(tier.travel[vehicle] || {}) };
   return { summary, perks };
+}
+
+// Shrinks a photo from the camera to a small JPEG data URL.
+export function resizeImage(file, max = 360) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that photo')); };
+    img.src = url;
+  });
 }

@@ -60,7 +60,8 @@ export function Chip({ active, disabled, onClick, children }) {
   );
 }
 
-export function Avatar({ name, size = 56 }) {
+export function Avatar({ name, src, size = 56 }) {
+  if (src) return <img className="avatar" src={src} alt={name} style={{ width: size, height: size, objectFit: 'cover' }} />;
   return (
     <span className="avatar" style={{ width: size, height: size, fontSize: size * 0.36, background: gradientFor(name) }}>
       {initials(name)}
