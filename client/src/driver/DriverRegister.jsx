@@ -53,7 +53,7 @@ export default function DriverRegister({ initial, session, onSaved, onCancel }) 
       </header>
       <div className="screen-body">
         <div>
-          <h2 className="big-title">{initial ? 'Your driver profile' : 'Drive with Twende'}</h2>
+          <h2 className="big-title">{initial ? 'Your driver profile' : 'Drive with Twende Ride App'}</h2>
           <p className="muted">Clients see your photo, vehicle and number plate before you meet, so they know it's you.</p>
         </div>
 

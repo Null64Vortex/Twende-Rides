@@ -2,7 +2,7 @@
   "name": "twende-app",
   "version": "1.0.0",
   "private": true,
-  "description": "Twende: rides, airport pickups, moving and deliveries around Kampala",
+  "description": "Twende Ride App: rides, airport pickups, moving and deliveries around Kampala",
   "scripts": {
     "setup": "npm install && npm install --prefix server && npm install --prefix client",
     "dev": "concurrently -n api,web -c yellow,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",

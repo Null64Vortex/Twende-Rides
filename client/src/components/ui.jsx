@@ -4,7 +4,7 @@ import { gradientFor, initials } from '../lib.js';
 export function Logo({ light }) {
   return (
     <span className={`logo ${light ? 'logo-light' : ''}`}>
-      twende<span className="logo-dot" />
+      twende ride<span className="logo-dot" />
     </span>
   );
 }

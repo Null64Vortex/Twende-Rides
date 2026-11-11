@@ -9,7 +9,7 @@ async function request(path, { method = 'GET', body, headers = {} } = {}) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error("Can't reach Twende. Check your internet connection.");
+    throw new Error("Can't reach Twende Ride App. Check your internet connection.");
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {

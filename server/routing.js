@@ -11,7 +11,7 @@ export async function route(a, b) {
   const timer = setTimeout(() => ctrl.abort(), 3500);
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
-    const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'twende-demo-app' } });
+    const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'twende-ride-app' } });
     const json = await res.json();
     const r = json.routes?.[0];
     if (r?.geometry?.coordinates?.length > 1) {

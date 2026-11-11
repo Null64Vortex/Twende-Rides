@@ -34,7 +34,7 @@ function parsePickup(body) {
     const lat = num(body.pickupGps.lat);
     const lng = num(body.pickupGps.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw bad('Your location could not be read');
-    if (!inUganda(lat, lng)) throw bad('Twende currently works in Uganda only');
+    if (!inUganda(lat, lng)) throw bad('Twende Ride App currently works in Uganda only');
     return { id: 'gps', name: 'Current location', area: 'Shared from GPS', lat, lng, gps: true };
   }
   const p = findPlace(body.pickupId);
@@ -207,4 +207,4 @@ if (fs.existsSync(dist)) {
   app.get('*', (req, res) => res.sendFile(path.join(dist, 'index.html')));
 }
 
-app.listen(PORT, () => console.log(`Twende API running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`Twende Ride App API running on http://localhost:${PORT}`));

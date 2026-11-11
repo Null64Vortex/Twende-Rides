@@ -148,7 +148,7 @@ export default function App() {
         <Logo light />
         {driverMode ? (
           <>
-            <h1>Drive with Twende and get clients near you.</h1>
+            <h1>Drive with Twende Ride App and get clients near you.</h1>
             <ul>
               <li>📸 Add your photo, vehicle and plate</li>
               <li>🟢 Go online and keep the app open</li>

@@ -1,4 +1,4 @@
-# Twende
+# Twende Ride App
 
 Rides, airport pickups, moving and deliveries around Kampala.
 React (Vite) frontend + Node.js (Express) backend.

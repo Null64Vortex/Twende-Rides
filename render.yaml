@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: twende
+    name: twende-ride-app
     runtime: node
     plan: free
     buildCommand: npm install --prefix server && npm install --prefix client --include=dev && npm run build --prefix client
